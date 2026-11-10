@@ -2,10 +2,10 @@
   "manifest_version": 3,
   "name": "轻译 TransLite",
   "version": "1.4.0",
-  "description": "网页整页/可视区域翻译：微软/百度/大模型多模型接力，指译、双语、自动翻译规则。译文原位显示，不改变页面样式。",
+  "description": "网页整页 / 可视区域翻译：可接入任意 OpenAI 兼容模型，也内置免密钥微软与百度引擎；段落合并成批调用省请求、避开限频，可视区域可提前 1~10 屏翻译减少等待；支持站点级正则 / XPath 规则与提示词模板。译文原位显示，不改变页面样式。",
   "browser_specific_settings": {
     "gecko": {
-      "id": "translite@patenx.app",
+      "id": "translite@patenx.com",
       "strict_min_version": "115.0",
       "data_collection_permissions": {
         "required": ["websiteContent"],

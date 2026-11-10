@@ -1,12 +1,12 @@
 # TransLite 公开仓库采用「白名单」策略：
-# 只公开运行所需源码、构建脚本、上架文档、单元测试与发行版 XPI。
-# 内部设计文档、UI 原型、截图、历史归档、浏览器缓存一律不入库。
+# 只公开扩展运行源码、发行版 XPI 与公开文档；内部资料一律不入库。
 *
 
 # —— 仓库元文件 ——
 !.gitignore
 !README.md
 !LICENSE
+!PRIVACY-POLICY.md
 
 # —— 扩展运行源码 ——
 !extension/
@@ -23,29 +23,6 @@
 !extension/icons/
 !extension/icons/*.png
 
-# —— 构建脚本 ——
-!scripts/
-!scripts/build-xpi.py
-!scripts/gen-icons.py
-
-# —— 上架资料（仅文本；截图与源码包不入库）——
-!store/
-!store/*.md
-!store/test-page.html
-
-# —— 单元测试（纯 Node，无本机路径）——
-!test-core.js
-!test-sync-chunks.js
-!test-background.js
-!test-gate.js
-!test-segments.js
-
 # —— 发行版 ——
 !dist/
 !dist/translite-*.xpi
-
-# —— 明确排除（顺序在后，优先级更高）——
-extension/ext2-test-page.html
-store/screenshots/
-store/*.zip
-dist/*.zip
