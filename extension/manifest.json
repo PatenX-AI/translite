@@ -1,0 +1,50 @@
+{
+  "manifest_version": 3,
+  "name": "轻译 TransLite",
+  "version": "1.4.0",
+  "description": "网页整页/可视区域翻译：微软/百度/大模型多模型接力，指译、双语、自动翻译规则。译文原位显示，不改变页面样式。",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "translite@patenx.app",
+      "strict_min_version": "115.0",
+      "data_collection_permissions": {
+        "required": ["websiteContent"],
+        "optional": ["authenticationInfo"]
+      }
+    },
+    "gecko_android": {
+      "strict_min_version": "142.0"
+    }
+  },
+  "permissions": ["storage", "tabs", "scripting"],
+  "host_permissions": ["<all_urls>"],
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "96": "icons/icon-96.png",
+    "128": "icons/icon-128.png"
+  },
+  "background": {
+    "scripts": ["lib/sync-chunks.js", "lib/core.js", "background.js"]
+  },
+  "action": {
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png"
+    },
+    "default_popup": "popup/popup.html",
+    "default_title": "轻译 TransLite"
+  },
+  "commands": {
+    "toggle-translate": {
+      "suggested_key": { "default": "Alt+A" },
+      "description": "翻译本页 / 显示原文"
+    },
+    "toggle-bi": {
+      "suggested_key": { "default": "Alt+Shift+A" },
+      "description": "切换双语显示"
+    }
+  }
+}

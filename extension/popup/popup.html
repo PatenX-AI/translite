@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<!-- TransLite · 轻译 — Firefox 弹出主控台（v1.4：命名规则 / 正则模板与 ^$ / 正则行为 / 站点多值 / 内置模板可编辑） -->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>TransLite · 轻译</title>
+<link rel="stylesheet" href="popup.css">
+</head>
+<body>
+<div class="panel" id="panel">
+
+  <div class="p-head"><span class="name">TransLite · 轻译</span></div>
+
+  <div class="tabbar">
+    <div class="tabs">
+      <div class="tab active" data-pane="translate">翻译</div>
+      <div class="tab" data-pane="models">模型</div>
+      <div class="tab" data-pane="settings">设置</div>
+    </div>
+    <span class="head-sw">全局<i class="tip" data-tip="开启：按自动翻译规则自动翻译，并允许手动翻译。关闭：不向页面注入任何代码，自动翻译、底部按钮、快捷键与指译均不响应。">?</i><div class="sw" id="globalSw"></div></span>
+  </div>
+
+  <div class="p-body">
+
+  <!-- ============ 翻译 ============ -->
+  <div class="pane active" id="pane-translate">
+
+    <div class="sec-title">翻译引擎</div>
+    <div class="engines" id="engineRow">
+      <div class="ecard" data-engine="microsoft">微软</div>
+      <div class="ecard" data-engine="baidu">百度</div>
+      <div class="ecard" data-engine="llm">大模型</div>
+    </div>
+    <div id="baiduCfg" class="hidden" style="margin-top:6px">
+      <div class="row"><span class="label">百度 APPID</span><span class="val"><input type="text" id="baiduAppid" class="wide" placeholder="APPID"></span></div>
+      <div class="row"><span class="label">百度密钥</span><span class="val"><input type="password" id="baiduSecret" class="wide" placeholder="密钥"></span></div>
+      <div class="row"><button class="btn" id="testBaidu">测试连接</button><span class="unit" id="testBaiduMsg"></span></div>
+    </div>
+
+    <div id="llmQuick" class="hidden quick2">
+      <div class="qmod">
+        <div class="qmod-head"><b>模型</b><span class="unit">选中即首选</span></div>
+        <div class="qmod-btns" id="quickModelBtns"></div>
+      </div>
+      <div class="qmod">
+        <div class="qmod-head"><b>提示词</b></div>
+        <div class="qmod-btns" id="quickPromptBtns"></div>
+      </div>
+    </div>
+    <p class="hint-row" id="quickHint">仅启用且已配置 Key 的模型可选；初始不选中任何模型。</p>
+    <div style="margin-top:4px"><span class="link" id="toModels">模型页管理 ›</span></div>
+
+    <div class="sec-title">语言<i class="tip" data-tip="原始语言相对于目标语言：页面原始语言命中以下任一已启用语言，即视为需翻译。单击切换启用状态，右击从列表移除。">?</i></div>
+    <div class="rule-group">
+      <div class="rg-head"><b>原始语言</b><span class="unit">单击启用/停用 · 右击移除</span></div>
+      <div class="chips" id="langChips"></div>
+      <div class="lang-tools">
+        <button class="chip add" id="langAdd">＋ 添加语言代码</button>
+        <select id="langQuick"><option value="">快速添加…</option></select>
+      </div>
+    </div>
+    <div class="row"><span class="label">目标语言</span>
+      <span class="val"><select id="tgtLang"></select></span>
+    </div>
+
+    <div class="sec-title">翻译范围<i class="tip" data-tip="可视区域：滚动到哪译到哪，可提前翻译 N 屏；完整页面：整页入队。均分批调用。">?</i></div>
+    <div class="seg" id="scopeRow">
+      <button data-scope="lazy">可视区域</button>
+      <button data-scope="full">完整页面</button>
+    </div>
+    <div class="grid2" id="aheadRow" style="margin-top:6px">
+      <div class="gcell">
+        <span class="label">提前翻译(屏)<i class="tip" data-tip="可视区域下方 X 屏的内容提前入队翻译，适合图文稀薄页面。">?</i></span>
+        <span class="val"><input type="number" id="aheadN" min="1" max="10"></span>
+      </div>
+      <div class="gcell">
+        <span class="label">启用</span>
+        <span class="val"><div class="sw" id="aheadSw"></div></span>
+      </div>
+    </div>
+
+    <div class="sec-title">自动翻译<i class="tip" data-tip="两个开关可分别打开或关闭：全部站点按原始语言判定；自定义站点按下方站点列表判定。全部关闭时禁用自动翻译，但底部按钮与快捷键仍可使用。">?</i></div>
+    <div class="grid2" id="autoRuleBox">
+      <div class="gcell"><span class="label">全部站点</span><span class="val"><div class="sw" id="autoAllSw"></div></span></div>
+      <div class="gcell"><span class="label">自定义站点</span><span class="val"><div class="sw" id="autoSiteSw"></div></span></div>
+    </div>
+    <p class="hint-row">两个开关独立生效、可同时开启；全部关闭即禁用自动翻译（不影响按钮与快捷键）。</p>
+    <div class="rule-group" id="siteGroup">
+      <div class="rg-head"><b>站点列表</b><span class="unit">单击启用/停用 · 右击移除</span></div>
+      <div class="chips" id="siteChips"></div>
+    </div>
+  </div>
+
+  <!-- ============ 模型 ============ -->
+  <div class="pane" id="pane-models">
+
+    <div class="sec-title">模型列表<i class="tip" data-tip="接力顺序即列表顺序。仅启用且已配置（含 API Key，本地模型可空）的模型参与接力；未配置的模板不作为备用。">?</i></div>
+    <div id="modelList"></div>
+    <div class="edit-form hidden" id="modelEdit">
+      <div class="form-title" id="modelEditTitle">编辑模型</div>
+      <div class="row"><span class="label">显示名</span><span class="val"><input type="text" id="meName" class="wide"></span></div>
+      <div class="row"><span class="label">服务商名称</span><span class="val"><input type="text" id="meVendor" class="wide" placeholder="如 GLM·智谱 / 自定义"></span></div>
+      <div class="row"><span class="label">接口地址</span><span class="val"><input type="text" id="meEndpoint" class="wide" placeholder="…/chat/completions"></span></div>
+      <div class="row"><span class="label">模型名</span><span class="val"><input type="text" id="meModel" class="wide"></span></div>
+      <div class="row"><span class="label">API Key</span><span class="val"><input type="password" id="meKey" class="wide" placeholder="本地可空"></span></div>
+      <div class="grid2">
+        <div class="gcell"><span class="label">maxToks(k)</span><span class="val"><input type="number" id="meMaxTok" min="0"></span></div>
+        <div class="gcell"><span class="label">并发数(个)</span><span class="val"><input type="number" id="meConc" min="0"></span></div>
+      </div>
+      <div class="btn-row" style="margin-top:8px">
+        <select id="meProvider" class="wide"><option value="">服务商快选…</option></select>
+        <button class="btn" id="meProbe">探测模型</button>
+      </div>
+      <div class="btn-row" style="margin-top:8px">
+        <button class="btn primary" id="meSave">保存</button>
+        <button class="btn" id="meCancel">取消</button>
+        <button class="btn" id="meTest">测试连接</button>
+        <span class="unit" id="meMsg"></span>
+      </div>
+    </div>
+    <div style="margin-top:8px"><button class="btn" id="addModel">＋ 添加模型</button></div>
+
+    <div class="sec-title">调用控制</div>
+    <div class="grid2">
+      <div class="gcell"><span class="label">并发数(个)</span><span class="val"><input type="number" id="cfgConc" min="1"></span></div>
+      <div class="gcell"><span class="label">调用间隔(ms)</span><span class="val"><input type="number" id="cfgInterval" min="0"></span></div>
+      <div class="gcell"><span class="label">等待回复(秒)</span><span class="val"><input type="number" id="cfgTimeout" min="5"></span></div>
+      <div class="gcell"><span class="label">失败重试(次)</span><span class="val"><input type="number" id="cfgRetry" min="0"></span></div>
+    </div>
+
+    <div class="sec-title">段落合并<i class="tip" data-tip="多段合并按每批最大段数 + 最大字符数先到者打包。单段超字符上限时：未超模型 maxToks 预算则整段直发（等待自动延长，上限 300s），超限才按句切分；留空按 32K 估算。">?</i></div>
+    <div class="grid2">
+      <div class="gcell"><span class="label">每批最大段数(段)</span><span class="val"><input type="number" id="cfgMaxSegs" min="1"></span></div>
+      <div class="gcell"><span class="label">最大字符数(字符)</span><span class="val"><input type="number" id="cfgMaxChars" min="200"></span></div>
+    </div>
+    <p class="hint-row">超大段落：直发优先（不切分、等待自动延长），超出 maxToks 预算才按句切分。</p>
+
+    <div class="sec-title" id="promptSecTitle">提示词模板<i class="tip" data-tip="一个模板 = 名称 + 正文 + 可选适用站点。内置模板同样可编辑（主要用于绑定站点规则），仅不可删除；站点可用 , 或 ; 分隔多个，命中任一即自动套用，其它站点按翻译页选中的全局模板。">?</i></div>
+    <p class="hint-row">内置模板可直接编辑；站点模板优先于全局设置。「＋ 新建模板」会带入当前生效模板（含站点），无需逐行复制。</p>
+    <div id="promptList"></div>
+    <div class="btn-row" style="margin-top:8px">
+      <button class="btn" id="promptNew">＋ 新建模板</button>
+      <span class="unit" id="promptSiteHint"></span>
+    </div>
+    <div id="promptEditor" class="prompt-editor hidden">
+      <div class="form-title" id="promptEditorTitle">编辑模板</div>
+      <div class="row"><span class="label">名称</span>
+        <span class="val"><input type="text" id="promptName" class="wide" placeholder="模板名称"></span>
+      </div>
+      <div class="row"><span class="label">适用站点</span>
+        <span class="val"><input type="text" id="promptSite" class="wide" placeholder="多个用 , 或 ; 分隔；留空 = 全局"></span>
+      </div>
+      <p class="hint-row">如 <code>patents.example.com;*.zhihuiya.com</code>，命中任一站点即自动套用本模板。</p>
+      <textarea id="promptText"></textarea>
+      <div class="btn-row" style="margin-top:8px">
+        <button class="btn" id="promptSave">保存模板</button>
+        <button class="btn" id="promptCancel">取消</button>
+        <span class="unit" id="promptMsg"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 设置 ============ -->
+  <div class="pane" id="pane-settings">
+
+    <div class="set-sec">
+      <div class="sec-title">界面</div>
+      <div class="grid2">
+        <div class="gcell"><span class="label">图标状态角标</span><span class="val"><div class="sw" id="badgeSw"></div></span></div>
+      </div>
+      <p class="hint-row">关闭后工具栏图标不再显示翻译状态角标；拖动右下角可调整面板尺寸，双击恢复默认。</p>
+    </div>
+
+    <div class="set-sec">
+      <div class="sec-title">快捷键<i class="tip" data-tip="全局快捷键在 about:addons → 扩展 → 齿轮 → 管理扩展快捷键 中修改。">?</i></div>
+      <div class="grid2">
+        <div class="gcell"><span class="label">翻译/显示原文</span><span class="val"><span class="kbd">Alt+A</span></span></div>
+        <div class="gcell"><span class="label">切换双语</span><span class="val"><span class="kbd">Alt+Shift+A</span></span></div>
+      </div>
+    </div>
+
+    <div class="set-sec">
+      <div class="sec-title">手动翻译范围<i class="tip" data-tip="Alt+A 或点击「立即翻译本页」时生效。当前页只影响本标签；当前域名会在本次浏览器会话内记住，同域名已打开及之后新开的页面自动翻译。不受自动翻译两个开关影响，总开关关闭后清空。">?</i></div>
+      <div class="seg" id="manualScopeRow">
+        <button data-scope="page">当前页</button>
+        <button data-scope="domain">当前域名</button>
+      </div>
+      <p class="hint-row">「当前域名」按主机名精确匹配（子域各自独立），仅本次浏览器会话有效。</p>
+    </div>
+
+    <div class="set-sec">
+      <div class="sec-title">指译<i class="tip" data-tip="双击切换与按住预览可同时启用，共用一个触发键；都关闭即指译关闭。">?</i></div>
+      <div class="grid2">
+        <div class="gcell"><span class="label">双击切换</span><span class="val"><div class="sw" id="peekDblSw"></div></span></div>
+        <div class="gcell"><span class="label">按住预览</span><span class="val"><div class="sw" id="peekHoldSw"></div></span></div>
+        <div class="gcell"><span class="label">触发键</span><span class="val"><select id="peekKey"></select></span></div>
+        <div class="gcell"><span class="label">长按时长(ms)</span><span class="val"><input type="number" id="peekHoldMs" min="150" max="1500"></span></div>
+      </div>
+    </div>
+
+    <div class="set-sec">
+      <div class="sec-title">双语显示</div>
+      <div class="row"><span class="label">双语分行</span><span class="val"><select id="biLayout"><option value="block">换行显示</option><option value="inline">行内接续</option></select></span></div>
+    </div>
+
+    <div class="set-sec">
+      <div class="sec-title">翻译行为<i class="tip" data-tip="一条规则 = 站点 + 匹配方式 + 表达式 + 行为。站点为 * 时作用于全局；正则类恒为 skip，XPath 可选 skip / inline / trans。">?</i></div>
+      <p class="hint-row" id="ruleHint">正则按<b>完整段落匹配</b>：<code>^</code> 与 <code>$</code> 已固定，只需填中间表达式（可用「模板」一键填入）；段内同时含正常语句与匹配内容（如 <code>sen a email to lily@gmail.com</code>）不会命中。站点可多个（用 <code>,</code> 或 <code>;</code> 分隔，<code>*</code> 全局）；正则类也可设 inline / trans。</p>
+      <div id="xpList"></div>
+      <div class="btn-row" style="margin-top:8px">
+        <button class="btn" id="xpAdd">＋ 添加规则</button>
+        <span class="unit" id="xpMsg"></span>
+      </div>
+    </div>
+
+    <div class="set-sec">
+      <div class="sec-title">缓存</div>
+      <div class="row"><span class="label">翻译缓存</span><span class="val"><span class="unit" id="cacheInfo">…</span> <button class="btn danger" id="cacheClear">清空</button></span></div>
+    </div>
+
+    <div class="set-sec">
+      <div class="sec-title">配置<i class="tip" data-tip="导出为 JSON 用于备份或迁移；导入覆盖全部配置并生效；重置两步确认。Firefox 账号同步随 Firefox Sync 跨设备。">?</i></div>
+      <div class="btn-row">
+        <button class="btn" id="cfgExport">导出配置</button>
+        <button class="btn" id="cfgImport">导入配置</button>
+        <button class="btn danger" id="cfgReset">重置配置</button>
+      </div>
+      <input type="file" id="cfgFile" accept=".json,application/json" class="hidden">
+      <div class="row"><span class="label">Firefox 账号同步</span><span class="val"><div class="sw" id="fxSyncSw"></div></span></div>
+    </div>
+
+    <div class="set-sec">
+      <div class="sec-title">关于</div>
+      <p class="hint-row">TransLite · 轻译 v1.4（Firefox 版）</p>
+      <p class="hint-row"><a class="ext-link" href="https://github.com/patenx-AI/translite" target="_blank" rel="noopener">GitHub 仓库 · patenx-AI/translite ↗</a></p>
+    </div>
+  </div>
+  </div><!-- /p-body -->
+
+  <div class="p-foot">
+    <button class="btn-primary" id="mainBtn"><span id="mainBtnLabel">立即翻译本页</span><small>Alt+A</small></button>
+    <div class="foot-bi">双语 <div class="sw" id="biSw"></div></div>
+    <div class="resize-grip" id="resizeGrip" title="拖动调整面板大小（双击恢复默认）"></div>
+  </div>
+</div>
+<script src="../lib/core.js"></script>
+<script src="popup.js"></script>
+</body>
+</html>
