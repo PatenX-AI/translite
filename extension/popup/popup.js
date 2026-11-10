@@ -376,6 +376,18 @@ function renderAuto() {
 }
 
 /* ================= 模型页 ================= */
+/* 列表顺序即接力顺序：上移/下移交换相邻两条模型记录。
+ * 交换后同步修正编辑区索引与草稿，避免「正在编辑 A」却写到 B 上。 */
+function moveModel(i, delta) {
+  const j = i + delta;
+  if (j < 0 || j >= Cfg.models.length) return;
+  [Cfg.models[i], Cfg.models[j]] = [Cfg.models[j], Cfg.models[i]];
+  if (editingModel === i) editingModel = j;
+  else if (editingModel === j) editingModel = i;
+  save();
+  if (!$('#modelEdit').classList.contains('hidden')) writeModelDraft();
+  renderModels(); renderEngines();
+}
 function renderModels() {
   const list = $('#modelList');
   list.innerHTML = '';
@@ -396,7 +408,12 @@ function renderModels() {
       '<div class="sw' + (m.enabled !== false ? ' on' : '') + '"></div>' +
       '<div class="m-main"><div class="m-name"></div><div class="m-meta"></div></div>' +
       '<span class="' + bcls + '"></span>' +
-      '<span class="m-ops"><span class="op-edit" title="编辑">✏️</span> <span class="op-del" title="删除">🗑️</span></span>';
+      '<span class="m-ops">' +
+        '<span class="op-move op-up' + (i === 0 ? ' dis' : '') + '" title="上移（接力顺序前移）">▲</span>' +
+        '<span class="op-move op-down' + (i === Cfg.models.length - 1 ? ' dis' : '') + '" title="下移（接力顺序后移）">▼</span>' +
+        '<span class="op-edit" title="编辑">✏️</span>' +
+        '<span class="op-del" title="删除">🗑️</span>' +
+      '</span>';
     row.querySelector('.m-name').textContent = m.name || m.model || '（未命名）';
     /* 列表不显示接入点，只显示服务商名称 + 模型名 */
     row.querySelector('.m-meta').textContent = (m.vendor || guessVendor(m.endpoint)) + ' · ' + (m.model || '—');
@@ -405,6 +422,8 @@ function renderModels() {
       m.enabled = (m.enabled === false);
       save(); renderModels(); renderEngines();
     });
+    row.querySelector('.op-up').addEventListener('click', () => moveModel(i, -1));
+    row.querySelector('.op-down').addEventListener('click', () => moveModel(i, 1));
     row.querySelector('.op-edit').addEventListener('click', () => openModelEdit(i));
     const delEl = row.querySelector('.op-del');
     delEl.addEventListener('click', () => {
