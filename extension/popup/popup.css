@@ -11,6 +11,15 @@ html, body {
 /* 标题行：仅标题（加粗） */
 .p-head { flex: none; display: flex; align-items: center; padding: 10px 14px 6px; }
 .p-head .name { font-size: 14px; font-weight: 700; }
+.head-open {
+  margin-left: auto; height: 22px; padding: 0 8px; font-size: 11px;
+  border: 1px solid #d0d7de; border-radius: 6px; background: #f6f8fa;
+  color: #57606a; cursor: pointer;
+}
+.head-open:hover { border-color: #0969da; color: #0969da; }
+/* v1.4.1 标签页模式：撑满视口并居中，保留面板内部结构 */
+html.intab, html.intab body { width: 100%; height: 100%; overflow: hidden; }
+html.intab .panel { max-width: 680px; margin: 0 auto; }
 
 /* 标签栏 + 全局开关同一行 */
 .tabbar {
@@ -150,6 +159,9 @@ select { max-width: 100%; }
 .qbtn.entry { border-style: dashed; color: #0969da; background: #f6f8fa; }
 .qbtn.active { background: #ddf4ff; border-color: #0969da; color: #0969da; font-weight: 500; }
 .qbtn.empty { color: #8c959f; cursor: default; border-style: dashed; }
+/* 已配置但未启用的模型：与语言页未启用 chip 一致的灰显，点击可启用并设为首选 */
+.qbtn.off { opacity: .62; border-style: dashed; }
+.qmod-entry { margin-top: 7px; }
 
 /* 底部主按钮栏（固定）：长圆形 pill 风格 */
 .p-foot {
@@ -184,6 +196,17 @@ select { max-width: 100%; }
 .btn.danger { color: #cf222e; border-color: #f0b4b4; }
 .btn.primary { background: #0969da; border-color: #0969da; color: #fff; }
 .btn-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+/* v1.4.1 探测结果：可批量勾选多个模型，共用同一个接入点 */
+.probe-tools { display: flex; gap: 10px; align-items: center; margin-top: 8px; }
+.probe-list {
+  margin-top: 6px; max-height: 152px; overflow-y: auto;
+  border: 1px solid #d0d7de; border-radius: 6px; padding: 6px 8px;
+}
+.probe-item {
+  display: flex; align-items: center; gap: 6px; font-size: 11px;
+  padding: 2px 0; cursor: pointer; word-break: break-all;
+}
+.probe-item input { flex: none; }
 
 /* 模型列表：显示服务商名称，不显示接入点 */
 .mrow {

@@ -292,7 +292,8 @@ function activePromptText(cfg, href) {
 
 /* ---------- 配置：默认值 / 迁移 / 归一化 ---------- */
 const PROVIDERS = [
-  { id: 'glm', name: 'GLM·智谱', endpoint: 'https://open.bigmodel.cn/api/paas/v4/chat/completions', model: 'GLM-4-Flash-250414', apply: 'https://open.bigmodel.cn/', applyText: '申请 Key' },
+  { id: 'glm', name: 'GLM·智谱', endpoint: 'https://open.bigmodel.cn/api/paas/v4/chat/completions', model: 'GLM-4.7-Flash', apply: 'https://open.bigmodel.cn/', applyText: '申请 Key' },
+  { id: 'siliconflow', name: '硅基流动', endpoint: 'https://api.siliconflow.cn/v1/chat/completions', model: 'tencent/Hunyuan-MT-7B', apply: 'https://cloud.siliconflow.cn/', applyText: '申请 Key' },
   { id: 'deepseek', name: 'DeepSeek', endpoint: 'https://api.deepseek.com/v1/chat/completions', model: 'deepseek-flash', apply: 'https://platform.deepseek.com/', applyText: '申请 Key' },
   { id: 'mimo', name: 'MiMo·小米', endpoint: 'https://api.xiaomimimo.com/v1/chat/completions', model: 'mimo-v2.6-flash', apply: 'https://platform.xiaomimimo.com/', applyText: '申请 Key' },
   { id: 'bailian', name: '百炼·阿里', endpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions', model: 'qwen-flash', apply: 'https://bailian.console.aliyun.com/', applyText: '申请 Key' },
@@ -302,12 +303,69 @@ const PROVIDERS = [
   { id: 'custom', name: '自定义', endpoint: '', model: '', apply: '', applyText: '' }
 ];
 function defaultModels() {
+  /* 默认只预置两个当前免费的模型；老配置已保存的模型不会被覆盖。
+   * 服务商快选（PROVIDERS）仍保留其它平台，方便一个接入点下继续加模型。 */
   return [
-    { id: 'm-glm', name: 'GLM-4-Flash-250414', vendor: 'GLM·智谱', endpoint: 'https://open.bigmodel.cn/api/paas/v4/chat/completions', model: 'GLM-4-Flash-250414', key: '', conc: 0, maxTok: 0, enabled: true, fails: 0 },
-    { id: 'm-mimo', name: 'MiMo V2.6', vendor: 'MiMo·小米', endpoint: 'https://api.xiaomimimo.com/v1/chat/completions', model: 'mimo-v2.6-flash', key: '', conc: 0, maxTok: 0, enabled: true, fails: 0 },
-    { id: 'm-ds', name: 'DeepSeek V4.1 Flash', vendor: 'DeepSeek', endpoint: 'https://api.deepseek.com/v1/chat/completions', model: 'deepseek-flash', key: '', conc: 0, maxTok: 0, enabled: true, fails: 0 }
+    { id: 'm-glm', name: 'GLM-4.7-Flash', vendor: 'GLM·智谱', endpoint: 'https://open.bigmodel.cn/api/paas/v4/chat/completions', model: 'GLM-4.7-Flash', key: '', conc: 0, maxTok: 0, enabled: true, fails: 0 },
+    { id: 'm-hunyuan', name: 'Hunyuan-MT-7B', vendor: '硅基流动', endpoint: 'https://api.siliconflow.cn/v1/chat/completions', model: 'tencent/Hunyuan-MT-7B', key: '', conc: 0, maxTok: 0, enabled: true, fails: 0 }
   ];
 }
+/* v1.4.1：一个接入点配置多个模型（探测结果可批量勾选）。
+ * form = { name, vendor, endpoint, key, conc, maxTok, models: string[] }
+ * 返回新的 models 数组，不修改入参；同一接入点的多条记录共享 endpoint/key/vendor，并以 groupId 归组。
+ *  - 新增：每个模型一条记录；多于一个时共用 groupId。
+ *  - 编辑单模型：只更新该条，保留 enabled / fails / 原 groupId。
+ *  - 编辑多模型：重建同组记录（首个复用原 id），未勾选的旧模型从组中移除。 */
+function buildModelEntries(form, existing, editIndex, now) {
+  const list = Array.isArray(existing) ? existing.slice() : [];
+  const names = [];
+  for (const n of (form && Array.isArray(form.models) ? form.models : [])) {
+    const s = String(n || '').trim();
+    if (s && names.indexOf(s) < 0) names.push(s);
+  }
+  if (!names.length) return list;
+  const multi = names.length > 1;
+  const orig = editIndex >= 0 ? list[editIndex] : null;
+  const groupId = multi
+    ? ((orig && orig.groupId) || 'g-' + now)
+    : ((orig && orig.groupId) || '');
+  const base = {
+    name: String((form && form.name) || '').trim(),
+    vendor: String((form && form.vendor) || '').trim() || guessVendor(form && form.endpoint),
+    endpoint: String((form && form.endpoint) || '').trim(),
+    key: String((form && form.key) || ''),
+    conc: +(form && form.conc) || 0,
+    maxTok: +(form && form.maxTok) || 0,
+    enabled: orig ? orig.enabled !== false : true,
+    fails: orig ? (+orig.fails || 0) : 0
+  };
+  const make = (modelName, i) => {
+    const e = {
+      id: (i === 0 && orig) ? orig.id : 'm-' + now + '-' + i,
+      name: multi ? modelName : (base.name || modelName),
+      vendor: base.vendor,
+      endpoint: base.endpoint,
+      model: modelName,
+      key: base.key,
+      conc: base.conc,
+      maxTok: base.maxTok,
+      enabled: base.enabled,
+      fails: base.fails
+    };
+    if (groupId) e.groupId = groupId;
+    return e;
+  };
+  if (!orig) return list.concat(names.map(make));
+  const entries = names.map(make);
+  if (!multi) {
+    list[editIndex] = Object.assign({}, orig, entries[0]);
+    return list;
+  }
+  const keep = (m) => !(orig.groupId && m.groupId === orig.groupId);
+  return list.slice(0, editIndex).filter(keep)
+    .concat(entries, list.slice(editIndex + 1).filter(keep));
+}
+
 /* 服务商名称：优先模型自带 vendor，其次按接口域名匹配预置服务商 */
 function guessVendor(endpoint) {
   const e = String(endpoint || '');
@@ -345,8 +403,16 @@ const BUILTIN_BEHAVIOR_RULES = [
     id: 'b-zhihuiya', kind: 'xpath', site: '*.zhihuiya.com', builtin: true, mode: 'inline', enabled: true,
     name: '智慧芽专利标题',
     expr: '//p[contains(concat(" ", normalize-space(@class), " "), " patent-app__title-context ")]'
+  },
+  {
+    id: 'b-zhihuiya-abst', kind: 'xpath', site: '*.zhihuiya.com', builtin: true, mode: 'skip', enabled: true,
+    name: '智慧芽专利信息栏',
+    expr: '//div[contains(concat(" ", normalize-space(@class), " "), " abst__layout ")]'
   }
 ];
+/* v1.4.1 起新增的内置规则 id：老配置升级时按 id 增量补入一次。
+ * 只补这里列出的规则，避免复活用户此前删除过的旧内置规则。 */
+const BUILTIN_INCREMENTAL_IDS = ['b-zhihuiya-abst'];
 
 const DEFAULT_LANG_LIST = ['zh', 'en', 'ja', 'ko', 'fr']; // 一行：中文（默认不选）+ 最常用 4 种（默认选中）
 const DEFAULTS = {
@@ -388,6 +454,7 @@ const DEFAULTS = {
   /* v1.3：统一「翻译行为」规则（XPath / 正则共用站点与行为字段） */
   behaviorRules: BUILTIN_BEHAVIOR_RULES.map(r => Object.assign({}, r)),
   behaviorBuiltinApplied: true, // 内置规则已处理标记（老配置升级补入一次，删除后不复活）
+  behaviorBuiltinV141Applied: true, // v1.4.1 新增内置规则的增量补入标记
   /* v1.4：单一提示词模板库，内置 3 条实体化持久化（可编辑站点/正文，不可删除） */
   promptPreset: 'general',     // 键名保留（Firefox Sync 兼容），值为 allPrompts() 中的 id
   prompts: builtinPrompts(),   // [{ id, name, text, site?, builtin?, enabled? }]，site 可用 , 或 ; 分隔多站点
@@ -431,6 +498,16 @@ function parseConfig(raw) {
       if (saved.behaviorBuiltinApplied !== true) {
         for (const br of BUILTIN_BEHAVIOR_RULES) {
           if (!saved.behaviorRules.some(r => r.expr === br.expr)) {
+            saved.behaviorRules.unshift(Object.assign({}, br));
+          }
+        }
+      }
+      /* v1.4.1：新增内置规则对老配置增量补入一次（按 id 去重）。
+       * 只处理 BUILTIN_INCREMENTAL_IDS，用户删掉旧规则不会被复活；删掉新规则后也不再复活。 */
+      if (saved.behaviorBuiltinV141Applied !== true && Array.isArray(saved.behaviorRules)) {
+        for (const br of BUILTIN_BEHAVIOR_RULES) {
+          if (BUILTIN_INCREMENTAL_IDS.indexOf(br.id) < 0) continue;
+          if (!saved.behaviorRules.some(r => r && r.id === br.id)) {
             saved.behaviorRules.unshift(Object.assign({}, br));
           }
         }
@@ -565,6 +642,7 @@ function parseConfig(raw) {
   Cfg.popupW = clamp(+Cfg.popupW || 0, 0, 1200);
   Cfg.popupH = clamp(+Cfg.popupH || 0, 0, 1200);
   Cfg.behaviorBuiltinApplied = true; // 随配置持久化，确保内置规则只补入一次
+  Cfg.behaviorBuiltinV141Applied = true; // v1.4.1 增量规则只补入一次
   Cfg.promptsMigrated = true;
   Cfg.promptsBuiltinApplied = true;
   if (Cfg.manualScope !== 'domain') Cfg.manualScope = 'page';
@@ -835,7 +913,7 @@ if (typeof module !== 'undefined' && module.exports) {
     PEEK_KEYS, peekKeyName, eventCombo, fmtCombo, matchSite,
     splitSites, isGlobalSite, matchSiteList, siteSpecificity, builtinPrompts,
     PROMPT_PRESETS, allPrompts, promptForSite, activePromptId, activePromptText,
-    PROVIDERS, defaultModels, guessVendor, DEFAULTS, BUILTIN_BEHAVIOR_RULES,
+    PROVIDERS, defaultModels, buildModelEntries, guessVendor, DEFAULTS, BUILTIN_BEHAVIOR_RULES,
     parseConfig, serializeConfig, shouldAutoTranslate, xpathRuleSite, ruleSite,
     activeBehaviorRules, activeXPathRules, activeRegexRules, compileSkipRule, shouldSkipByRules, regexMarkFor,
     splitLong, joinParts, packBatches, estTokens, tokenBudget, planPieces,

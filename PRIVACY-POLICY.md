@@ -1,6 +1,6 @@
 # 隐私政策 / Privacy Policy — 轻译 TransLite
 
-**适用版本**：v1.4.0　**生效日期**：2026-11-09
+**适用版本**：v1.4.1　**生效日期**：2026-11-10
 **开发者 / Data controller**：PatenX-AI（<https://github.com/PatenX-AI>）
 **联系 / Contact**：`<TODO: 填写支持邮箱>`（或使用 <https://github.com/PatenX-AI/translite/issues>）
 

@@ -1,6 +1,8 @@
-/* popup.js — TransLite · 轻译 弹出主控台（依赖 ../lib/core.js 先行载入） */
+/* popup.js — TransLite · 轻译 弹出主控台（依赖 ../lib/core.js 先行载入）
+ * v1.4.1：输入即保存（防抖）/ 模型编辑草稿恢复 / 在标签页打开的完整操作界面 */
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
+const IN_TAB = new URLSearchParams(location.search).has('intab');
 
 /* 下拉项用 DOM API 构建，不用 innerHTML 拼接，避免动态 HTML 注入告警。
  * items: [[value, label], ...] */
@@ -11,16 +13,75 @@ function setOptions(sel, items) {
 let Cfg = parseConfig('');
 let activeTabId = null;
 let editingModel = -1;
+let probeList = [];                // 最近一次探测得到的模型名
+let probeSelected = new Set();     // 已勾选的模型名（可多选，共用一个接入点）
 let resetArmed = false;
 let tipBubble = null;
 let currentHref = '';              // 当前标签页 URL（提示词站点套用显示用）
 let promptEditor = null;           // { mode:'new'|'edit', id }（new 自动带入当前生效模板）
 
+/* 输入即保存：防抖写盘，避免每敲一个键都触发 background 重解析与 Sync 推送 */
+let saveTimer = 0;
+function saveSoon() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => { saveTimer = 0; save(); }, 300);
+}
 function save() {
+  clearTimeout(saveTimer); saveTimer = 0;
   browser.storage.local.set({ tl_config_v1: serializeConfig(Cfg) });
-  if (activeTabId != null) {
+  if (activeTabId != null && !IN_TAB) {
     browser.tabs.sendMessage(activeTabId, { cmd: 'applyConfig' }).catch(() => {});
   }
+}
+
+/* 模型编辑草稿：弹出面板失焦收起后，重开仍可继续粘贴接入点 / Key / 勾选结果。
+ * 草稿只在本地 storage，点「保存」才正式写入 Cfg.models，点「取消」即清除。 */
+const DRAFT_KEY = 'tl_model_draft_v1';
+let draftTimer = 0;
+function modelDraft() {
+  return {
+    editingModel,
+    name: $('#meName').value, vendor: $('#meVendor').value,
+    endpoint: $('#meEndpoint').value, model: $('#meModel').value,
+    key: $('#meKey').value, maxTok: $('#meMaxTok').value, conc: $('#meConc').value,
+    probeList, probeSelected: [...probeSelected], ts: Date.now()
+  };
+}
+function writeModelDraft() {
+  draftTimer = 0;
+  if ($('#modelEdit').classList.contains('hidden')) return;
+  browser.storage.local.set({ [DRAFT_KEY]: JSON.stringify(modelDraft()) }).catch(() => {});
+}
+function saveModelDraftSoon() {
+  /* 草稿键不触发 background 重解析 / Sync，逐键写入即可保证失焦收起不丢内容 */
+  clearTimeout(draftTimer);
+  draftTimer = 0;
+  writeModelDraft();
+}
+function clearModelDraft() {
+  clearTimeout(draftTimer); draftTimer = 0;
+  browser.storage.local.remove(DRAFT_KEY).catch(() => {});
+}
+function restoreModelDraft(raw) {
+  if (!raw) return false;
+  try {
+    const d = JSON.parse(raw);
+    if (!d || Date.now() - (+d.ts || 0) > 7 * 86400000) { clearModelDraft(); return false; }
+    openModelEdit(typeof d.editingModel === 'number' ? d.editingModel : -1);
+    probeList = Array.isArray(d.probeList) ? d.probeList : [];
+    probeSelected = new Set(Array.isArray(d.probeSelected) ? d.probeSelected : []);
+    $('#meName').value = d.name || '';
+    $('#meVendor').value = d.vendor || '';
+    $('#meEndpoint').value = d.endpoint || '';
+    $('#meModel').value = d.model || '';
+    $('#meKey').value = d.key || '';
+    $('#meMaxTok').value = d.maxTok || 0;
+    $('#meConc').value = d.conc || 0;
+    renderProbeList();
+    $('#meMsg').textContent = '已恢复上次未保存的编辑内容';
+    goTab('models');
+    return true;
+  } catch (e) { clearModelDraft(); return false; }
 }
 
 /* 行内输入：点击 chip/按钮时原地替换成 input，Enter 确认 / Esc 或失焦取消。
@@ -169,11 +230,12 @@ function renderEngines() {
   $('#baiduAppid').value = Cfg.baidu.appid || '';
   $('#baiduSecret').value = Cfg.baidu.secret || '';
 
-  /* 模型快捷按钮：仅启用且已配置；初始不选中任何模型 */
+  /* 模型快捷按钮：正常（启用 + 已配置） + 灰显（已配置但未启用，点击即启用并设为首选） */
   const rel = relayModels(Cfg.models, Cfg.quickModel);
+  const offModels = Cfg.models.filter(m => m && m.enabled === false && modelConfigured(m));
   const mb = $('#quickModelBtns');
   mb.innerHTML = '';
-  if (!rel.length) {
+  if (!rel.length && !offModels.length) {
     const b = document.createElement('span');
     b.className = 'qbtn empty';
     b.textContent = '未配置模型';
@@ -190,10 +252,27 @@ function renderEngines() {
       });
       mb.appendChild(b);
     }
+    for (const m of offModels) {
+      const b = document.createElement('button');
+      b.className = 'qbtn off' + (Cfg.quickModel === m.id ? ' active' : '');
+      b.textContent = m.name || m.model || m.id;
+      b.title = '已停用 · 点击启用并设为首选（' + (m.vendor || guessVendor(m.endpoint)) + ' · ' + (m.model || '') + '）';
+      b.addEventListener('click', () => {
+        m.enabled = true;
+        Cfg.quickModel = m.id;
+        save(); renderEngines(); renderModels();
+      });
+      mb.appendChild(b);
+    }
   }
   $('#quickHint').textContent = rel.length
-    ? '单击选中即设为首选（接力 #1），再次单击取消；未配置的模型不参与接力。'
-    : '请先在「模型」页填写 API Key；初始不选中任何模型。';
+    ? '单击选中即设为首选（接力 #1），再次单击取消；灰显为已停用模型，点击可启用并设为首选。'
+    : (offModels.length
+      ? '暂无启用模型；点击灰显模型即可启用并设为首选。'
+      : '请先在「模型」页填写 API Key；初始不选中任何模型。');
+  /* 跳转入口已上移到模型列表下方；未配置时用更明确的引导文案 */
+  const toModels = $('#toModels');
+  if (toModels) toModels.textContent = rel.length ? '模型页管理 ›' : '前往模型页配置 ›';
 
   /* 提示词卡片：纯选择器（单一模板库），末尾「＋ 新建模板」入口 */
   renderPromptButtons();
@@ -479,7 +558,41 @@ function savePromptEditor() {
   save(); renderEngines(); renderPromptLibrary();
 }
 
+/* v1.4.1 探测结果勾选列表：探测后不自动填首个模型，由用户批量勾选 */
+function updateProbeCount() {
+  const el = $('#meProbeCount');
+  if (el) el.textContent = '已选 ' + probeSelected.size + ' / ' + probeList.length;
+}
+function renderProbeList() {
+  const box = $('#meProbeList'), tools = $('#meProbeTools');
+  if (!box || !tools) return;
+  box.replaceChildren();
+  if (!probeList.length) {
+    box.classList.add('hidden'); tools.classList.add('hidden');
+    return;
+  }
+  box.classList.remove('hidden'); tools.classList.remove('hidden');
+  for (const name of probeList) {
+    const lab = document.createElement('label');
+    lab.className = 'probe-item';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = probeSelected.has(name);
+    cb.addEventListener('change', () => {
+      if (cb.checked) probeSelected.add(name); else probeSelected.delete(name);
+      updateProbeCount();
+      saveModelDraftSoon();
+    });
+    const span = document.createElement('span');
+    span.textContent = name;
+    lab.append(cb, span);
+    box.appendChild(lab);
+  }
+  updateProbeCount();
+}
+
 function openModelEdit(i) {
+  if (i >= 0 && !Cfg.models[i]) i = -1; // 草稿恢复时原索引可能已失效
   editingModel = i;
   const m = i >= 0 ? Cfg.models[i] : { id: 'm-' + Date.now(), name: '', vendor: '', endpoint: '', model: '', key: '', conc: 0, maxTok: 0, enabled: true, fails: 0 };
   $('#modelEdit').classList.remove('hidden');
@@ -494,6 +607,9 @@ function openModelEdit(i) {
   $('#meMsg').textContent = '';
   const pv = $('#meProvider');
   setOptions(pv, [['', '服务商快选…']].concat(PROVIDERS.map(p => [p.id, p.name])));
+  probeList = [];
+  probeSelected.clear();
+  renderProbeList();
 }
 
 /* ================= 设置页 ================= */
@@ -693,8 +809,8 @@ function bindAll() {
     Cfg.engine = c.dataset.engine;
     save(); renderEngines();
   }));
-  $('#baiduAppid').addEventListener('change', () => { Cfg.baidu.appid = $('#baiduAppid').value.trim(); save(); });
-  $('#baiduSecret').addEventListener('change', () => { Cfg.baidu.secret = $('#baiduSecret').value.trim(); save(); });
+  $('#baiduAppid').addEventListener('change', () => { Cfg.baidu.appid = $('#baiduAppid').value.trim(); saveSoon(); });
+  $('#baiduSecret').addEventListener('change', () => { Cfg.baidu.secret = $('#baiduSecret').value.trim(); saveSoon(); });
   $('#testBaidu').addEventListener('click', async () => {
     $('#testBaiduMsg').textContent = '测试中…';
     const r = await browser.runtime.sendMessage({ type: 'testEngine', engine: 'baidu' }).catch(e => ({ ok: false, error: String(e) }));
@@ -738,11 +854,13 @@ function bindAll() {
     save(); renderAuto();
   });
 
-  /* 模型编辑 */
-  $('#addModel').addEventListener('click', () => openModelEdit(-1));
+  /* 模型编辑（v1.4.1：一个接入点可批量配置多个模型；输入即保存草稿） */
+  $('#addModel').addEventListener('click', () => { clearModelDraft(); openModelEdit(-1); });
   $('#meCancel').addEventListener('click', () => {
+    clearModelDraft();
     $('#modelEdit').classList.add('hidden');
     editingModel = -1;
+    probeList = []; probeSelected.clear(); renderProbeList();
   });
   $('#meProvider').addEventListener('change', () => {
     const p = PROVIDERS.find(x => x.id === $('#meProvider').value);
@@ -751,50 +869,65 @@ function bindAll() {
     if (p.model) $('#meModel').value = p.model;
     if (!$('#meName').value && p.name) $('#meName').value = p.name;
     if (!$('#meVendor').value && p.name && p.id !== 'custom') $('#meVendor').value = p.name;
+    saveModelDraftSoon();
   });
   $('#meProbe').addEventListener('click', async () => {
     $('#meMsg').textContent = '探测中…';
     const r = await browser.runtime.sendMessage({ type: 'probe', endpoint: $('#meEndpoint').value, key: $('#meKey').value })
       .catch(e => ({ ok: false, error: String(e) }));
     if (r && r.ok && r.list && r.list.length) {
-      $('#meModel').value = r.list[0];
-      $('#meMsg').textContent = '探测到 ' + r.list.length + ' 个模型，已填入首个';
+      probeList = r.list.slice();
+      probeSelected = new Set();
+      renderProbeList();                 // 不再自动填入第一个模型
+      $('#meMsg').textContent = '探测到 ' + probeList.length + ' 个模型，请勾选后保存（可多选）';
     } else {
       $('#meMsg').textContent = '失败：' + ((r && r.error) || '无结果');
     }
+    saveModelDraftSoon();
+  });
+  $('#meProbeAll').addEventListener('click', () => {
+    probeSelected = new Set(probeList); renderProbeList(); saveModelDraftSoon();
+  });
+  $('#meProbeNone').addEventListener('click', () => {
+    probeSelected.clear(); renderProbeList(); saveModelDraftSoon();
   });
   $('#meTest').addEventListener('click', async () => {
     $('#meMsg').textContent = '测试中…';
+    const modelName = $('#meModel').value.trim() || [...probeSelected][0] || '';
     const model = {
-      name: $('#meName').value, endpoint: $('#meEndpoint').value, model: $('#meModel').value,
+      name: $('#meName').value, endpoint: $('#meEndpoint').value, model: modelName,
       key: $('#meKey').value, maxTok: +$('#meMaxTok').value || 0
     };
     const r = await browser.runtime.sendMessage({ type: 'testModel', model }).catch(e => ({ ok: false, error: String(e) }));
     $('#meMsg').textContent = r && r.ok ? '成功：' + r.sample : '失败：' + (r && r.error);
   });
   $('#meSave').addEventListener('click', () => {
-    const data = {
-      id: editingModel >= 0 ? Cfg.models[editingModel].id : 'm-' + Date.now(),
-      name: $('#meName').value.trim() || $('#meModel').value.trim() || '未命名',
-      vendor: $('#meVendor').value.trim() || guessVendor($('#meEndpoint').value),
+    const names = [...probeSelected];
+    const manual = $('#meModel').value.trim();
+    if (manual && names.indexOf(manual) < 0) names.unshift(manual);
+    if (!names.length) {
+      $('#meMsg').textContent = '请填写模型名，或在探测结果中勾选至少一个模型';
+      return;
+    }
+    Cfg.models = buildModelEntries({
+      name: $('#meName').value.trim(),
+      vendor: $('#meVendor').value.trim(),
       endpoint: $('#meEndpoint').value.trim(),
-      model: $('#meModel').value.trim(),
       key: $('#meKey').value,
       conc: +$('#meConc').value || 0,
       maxTok: +$('#meMaxTok').value || 0,
-      enabled: true,
-      fails: 0
-    };
-    if (editingModel >= 0) Cfg.models[editingModel] = Object.assign(Cfg.models[editingModel], data);
-    else Cfg.models.push(data);
+      models: names
+    }, Cfg.models, editingModel, Date.now());
     save();
+    clearModelDraft();
     $('#modelEdit').classList.add('hidden');
     editingModel = -1;
+    probeList = []; probeSelected.clear(); renderProbeList();
     renderModels(); renderEngines();
   });
 
   /* 调用控制 / 段落合并 */
-  const num = (id, fn) => $(id).addEventListener('change', () => { fn(+$(id).value); save(); renderModels(); });
+  const num = (id, fn) => $(id).addEventListener('change', () => { fn(+$(id).value); saveSoon(); renderModels(); });
   num('#cfgConc', v => Cfg.concurrency = Math.max(1, v || 2));
   num('#cfgInterval', v => Cfg.callInterval = Math.max(0, v || 0));
   num('#cfgTimeout', v => Cfg.replyTimeout = Math.max(5, v || 90) * 1000);
@@ -812,7 +945,7 @@ function bindAll() {
   $('#peekHoldSw').addEventListener('click', () => { Cfg.peekHold = !Cfg.peekHold; save(); renderSettings(); });
   $('#badgeSw').addEventListener('click', () => { Cfg.badgeEnabled = !(Cfg.badgeEnabled !== false); save(); renderSettings(); });
   $('#peekKey').addEventListener('change', () => { Cfg.peekKey = $('#peekKey').value; save(); });
-  $('#peekHoldMs').addEventListener('change', () => { Cfg.peekHoldMs = Math.min(1500, Math.max(150, +$('#peekHoldMs').value || 400)); save(); });
+  $('#peekHoldMs').addEventListener('change', () => { Cfg.peekHoldMs = Math.min(1500, Math.max(150, +$('#peekHoldMs').value || 400)); saveSoon(); });
   $$('#manualScopeRow button').forEach(b => b.addEventListener('click', () => {
     Cfg.manualScope = b.dataset.scope;
     save(); renderSettings();
@@ -902,18 +1035,54 @@ function renderAll() {
   refreshStatus();
 }
 
+/* v1.4.1：输入即保存 + 标签页入口 + 面板收起前落盘 */
+function bindLiveSave() {
+  /* 配置类文本框：input 事件复用既有 change 回调（内部走 saveSoon 防抖） */
+  $$('#baiduAppid,#baiduSecret,#cfgConc,#cfgInterval,#cfgTimeout,#cfgRetry,#cfgMaxSegs,#cfgMaxChars,#peekHoldMs')
+    .forEach(el => el.addEventListener('input', () => el.dispatchEvent(new Event('change'))));
+  /* 模型编辑区：逐键把表单内容写入独立草稿键（不触发配置广播） */
+  $$('#modelEdit input').forEach(el => {
+    if (el.type !== 'checkbox') el.addEventListener('input', saveModelDraftSoon);
+  });
+  const flush = () => {
+    if (saveTimer) save();
+    if (draftTimer) writeModelDraft();
+  };
+  window.addEventListener('pagehide', flush);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flush();
+  });
+
+  if (IN_TAB) {
+    document.documentElement.classList.add('intab');
+    document.title = 'TransLite · 轻译（标签页）';
+    $('#openInTab').classList.add('hidden');
+  } else {
+    $('#openInTab').addEventListener('click', () => {
+      browser.tabs.create({ url: browser.runtime.getURL('popup/popup.html') + '?intab=1' }).catch(() => {});
+    });
+  }
+}
+
 /* ================= 初始化 ================= */
 (async () => {
+  let stored = {};
   try {
-    const o = await browser.storage.local.get('tl_config_v1');
-    Cfg = parseConfig(o.tl_config_v1 || '');
-    const tabs = await browser.tabs.query({ active: true, currentWindow: true });
-    activeTabId = tabs[0] && tabs[0].id;
-    currentHref = (tabs[0] && tabs[0].url) || '';
+    stored = await browser.storage.local.get(['tl_config_v1', DRAFT_KEY]);
+    Cfg = parseConfig(stored.tl_config_v1 || '');
+    if (IN_TAB) {
+      activeTabId = null; currentHref = '';
+    } else {
+      const tabs = await browser.tabs.query({ active: true, currentWindow: true });
+      activeTabId = tabs[0] && tabs[0].id;
+      currentHref = (tabs[0] && tabs[0].url) || '';
+    }
   } catch (e) { /* 保持默认 */ }
   renderAll();
   bindAll();
   bindTips();
   bindResize();
+  bindLiveSave();
   setInterval(refreshStatus, 2000);
+  restoreModelDraft(stored[DRAFT_KEY]);
 })();

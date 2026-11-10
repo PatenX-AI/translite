@@ -9,7 +9,7 @@
 <body>
 <div class="panel" id="panel">
 
-  <div class="p-head"><span class="name">TransLite · 轻译</span></div>
+  <div class="p-head"><span class="name">TransLite · 轻译</span><button class="head-open" id="openInTab" title="在标签页中打开，配置模型时不会因失焦收起">⇱ 标签页打开</button></div>
 
   <div class="tabbar">
     <div class="tabs">
@@ -41,6 +41,7 @@
       <div class="qmod">
         <div class="qmod-head"><b>模型</b><span class="unit">选中即首选</span></div>
         <div class="qmod-btns" id="quickModelBtns"></div>
+        <div class="qmod-entry"><span class="link" id="toModels">模型页管理 ›</span></div>
       </div>
       <div class="qmod">
         <div class="qmod-head"><b>提示词</b></div>
@@ -48,7 +49,6 @@
       </div>
     </div>
     <p class="hint-row" id="quickHint">仅启用且已配置 Key 的模型可选；初始不选中任何模型。</p>
-    <div style="margin-top:4px"><span class="link" id="toModels">模型页管理 ›</span></div>
 
     <div class="sec-title">语言<i class="tip" data-tip="原始语言相对于目标语言：页面原始语言命中以下任一已启用语言，即视为需翻译。单击切换启用状态，右击从列表移除。">?</i></div>
     <div class="rule-group">
@@ -101,7 +101,7 @@
       <div class="row"><span class="label">显示名</span><span class="val"><input type="text" id="meName" class="wide"></span></div>
       <div class="row"><span class="label">服务商名称</span><span class="val"><input type="text" id="meVendor" class="wide" placeholder="如 GLM·智谱 / 自定义"></span></div>
       <div class="row"><span class="label">接口地址</span><span class="val"><input type="text" id="meEndpoint" class="wide" placeholder="…/chat/completions"></span></div>
-      <div class="row"><span class="label">模型名</span><span class="val"><input type="text" id="meModel" class="wide"></span></div>
+      <div class="row"><span class="label">模型名</span><span class="val"><input type="text" id="meModel" class="wide" placeholder="手动填写，或在下方探测结果勾选（可多选）"></span></div>
       <div class="row"><span class="label">API Key</span><span class="val"><input type="password" id="meKey" class="wide" placeholder="本地可空"></span></div>
       <div class="grid2">
         <div class="gcell"><span class="label">maxToks(k)</span><span class="val"><input type="number" id="meMaxTok" min="0"></span></div>
@@ -111,6 +111,12 @@
         <select id="meProvider" class="wide"><option value="">服务商快选…</option></select>
         <button class="btn" id="meProbe">探测模型</button>
       </div>
+      <div id="meProbeTools" class="probe-tools hidden">
+        <span class="link" id="meProbeAll">全选</span>
+        <span class="link" id="meProbeNone">清空</span>
+        <span class="unit" id="meProbeCount"></span>
+      </div>
+      <div id="meProbeList" class="probe-list hidden"></div>
       <div class="btn-row" style="margin-top:8px">
         <button class="btn primary" id="meSave">保存</button>
         <button class="btn" id="meCancel">取消</button>
